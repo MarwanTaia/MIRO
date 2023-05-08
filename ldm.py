@@ -49,11 +49,11 @@ np.random.seed(seed)
 
 # Set directories
 ## Data directory
-data_dir = "/globalscratch/ucl/irec/mtaia/datasets/lung/lidc/lidc_full/"
+data_dir = "/globalscratch/ucl/irec/mtaia/datasets/lung/ct_manifest_cancer_pt/"
 ## Data CSV file
 data_csv = os.path.join(data_dir, "data_index.csv")
 ## Output directory
-output_dir = "/globalscratch/ucl/irec/mtaia/monai/ldm_lung_lidc_resampled/"
+output_dir = "/globalscratch/ucl/irec/mtaia/monai/ldm_lung/"
 ## Checkpoint directory
 checkpoint_dir = os.path.join(output_dir, "checkpoints")
 ## Log directory
@@ -71,9 +71,9 @@ os.makedirs(figure_dir, exist_ok=True)
 
 # Set parameters
 ## Number of epochs
-epochs = 300 # 250
+epochs = 250 # 250
 ## Validation interval
-valid_interval = 30 # 20
+valid_interval = 10 # 20
 ## Batch size
 batch_size = 1
 ## Number of workers
@@ -83,17 +83,17 @@ lr = 1e-4
 ## Number of diffusion steps
 num_diffusion_steps = 1000
 ## Image size
-image_size = (120, 200, 200)
+image_size = (220, 300, 300)
 ## Volume size
-voxel_size = (2, 2, 2)
+voxel_size = (1.0, 1.0, 1.0)
 ## Training data proportion
 train_portion = 0.9
 ## Number of example images
 num_example_images = 5
 ## Latent channels
-latent_channels = 32 # 256 
+latent_channels = 32 # 256 # Try 512/64 32/512
 ## Codebook size
-num_embeddings = 1024*10 # 128
+num_embeddings = 1024*4 # 128
 
 ###################################################################################################
 # Functions
@@ -123,7 +123,10 @@ def get_gpu_mem(message='', device_ids=[0]):
         print(f'free  (GB): {info.free / 1024 / 1024 / 1024}')
         print(f'used  (GB): {info.used / 1024 / 1024 / 1024}')
 
-def load_checkpoint_vqvae(model_checkpoint_dir):
+
+def load_checkpoint_vqvae(model_checkpoint_dir, start_epoch, epoch_recon_loss_list,
+                          epoch_gen_loss_list, epoch_disc_loss_list, val_recon_epoch_loss_list,
+                          intermediary_images, best_valid_loss):
     if os.path.exists(model_checkpoint_dir):
         checkpoint = torch.load(model_checkpoint_dir)
         vqvae.load_state_dict(checkpoint['vqvae'])
@@ -138,19 +141,27 @@ def load_checkpoint_vqvae(model_checkpoint_dir):
         intermediary_images = checkpoint['intermediary_images']
         start_epoch = checkpoint['epoch']
         best_valid_loss = checkpoint['best_valid_loss']
+
+        print(f"Checkpoint loaded. Starting from epoch {start_epoch + 1}")
     else:
         print("No previous checkpoint found. Training from scratch.")
+    return start_epoch, epoch_recon_loss_list, epoch_gen_loss_list, epoch_disc_loss_list, val_recon_epoch_loss_list, intermediary_images, best_valid_loss
 
-def load_checkpoint_ddpm(model_checkpoint_dir):
-    global start_epoch
+
+def load_checkpoint_ddpm(model_checkpoint_dir, start_epoch, epoch_loss_list, val_epoch_loss_list, best_valid_loss):
     if os.path.exists(model_checkpoint_dir):
         checkpoint = torch.load(model_checkpoint_dir)
         ddpm.load_state_dict(checkpoint["ddpm"])
         optimizer_diff.load_state_dict(checkpoint["optimizer_diff"])
         start_epoch = checkpoint["epoch"]
+        epoch_loss_list = checkpoint["epoch_loss_list"]
+        val_epoch_loss_list = checkpoint["val_epoch_loss_list"]
+        best_valid_loss = checkpoint["best_valid_loss"]
+
         print(f"Checkpoint loaded. Starting from epoch {start_epoch + 1}")
     else:
         print("No checkpoint found. Starting from scratch.")
+    return start_epoch, epoch_loss_list, val_epoch_loss_list, best_valid_loss
 
 ###################################################################################################
 # Data Loading
@@ -172,10 +183,9 @@ transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
         transforms.EnsureChannelFirstd(keys=["image"]),
-        transforms.Resized(keys=["image"], spatial_size=image_size[::-1]),
-        # transforms.Spacingd(keys=["image"], pixdim=voxel_size, mode=("bilinear")),
+        transforms.Spacingd(keys=["image"], pixdim=voxel_size, mode=("bilinear")),
         transforms.Orientationd(keys=["image"], axcodes="RSA"),
-        # transforms.CenterSpatialCropd(keys=["image"], roi_size=image_size),
+        transforms.CenterSpatialCropd(keys=["image"], roi_size=image_size),
         transforms.NormalizeIntensityd(keys=["image"]),
         transforms.ToTensord(keys=["image"]),
     ]
@@ -184,7 +194,7 @@ transforms = transforms.Compose(
 # Create a dataset
 dataset = Dataset(data=data_dicts, transform=transforms)
 
-# Create a data loaders for training and validation
+# Create a data loaders for training and validation (0.8, 0.2)
 train_size = int(train_portion * len(dataset))
 val_size = len(dataset) - train_size
 print(f"Training set size: {train_size}")
@@ -239,8 +249,8 @@ vqvae = VQVAE(
     spatial_dims=3,
     in_channels=1,
     out_channels=1,
-    downsample_parameters=((2, 4, 1, 0),    (2, 4, 1, 1),    (2, 4, 1, 1)),
-    upsample_parameters=(  (2, 4, 1, 0, 0), (2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
+    downsample_parameters=((2, 4, 1, 0),    (2, 4, 1, 0),    (2, 4, 1, 1)),
+    upsample_parameters=(  (2, 4, 1, 0, 0), (2, 4, 1, 0, 0), (2, 4, 1, 1, 0)),
 
     num_res_layers=3,
     num_channels=[latent_channels, latent_channels, latent_channels],
@@ -263,6 +273,10 @@ discriminator = PatchDiscriminator(
 perceptual_loss = PerceptualLoss(
     spatial_dims=3,
 ).to(device)
+
+# Do data parallel
+# vqvae = torch.nn.DataParallel(vqvae, device_ids=device_ids)
+# discriminator = torch.nn.DataParallel(discriminator, device_ids=device_ids)
 
 # Print GPU memory
 # get_gpu_mem("VQ-GAN models loaded", device_ids)
@@ -290,7 +304,10 @@ intermediary_images = []
 best_valid_loss = np.inf
 
 # Load model
-load_checkpoint_vqvae(vqgan_checkpoint_path)
+start_epoch, epoch_recon_loss_list, epoch_gen_loss_list, epoch_disc_loss_list, val_recon_epoch_loss_list, intermediary_images, best_valid_loss = load_checkpoint_vqvae(vqgan_checkpoint_path, start_epoch, epoch_recon_loss_list,
+                          epoch_gen_loss_list, epoch_disc_loss_list, val_recon_epoch_loss_list,
+                          intermediary_images, best_valid_loss)
+print(f"Checkpoint loaded. Starting from epoch {start_epoch + 1}")
 
 # Reload those elements then
 
@@ -414,7 +431,7 @@ for epoch in range(start_epoch, epochs):
         # Plot losses: reconstruction train and validation
         plt.figure(figsize=(10, 5))
         plt.plot(epoch_recon_loss_list, label="train")
-        plt.plot(np.arange(0, epoch + 1, valid_interval), val_recon_epoch_loss_list, label="validation")
+        plt.plot(np.arange(0, len(epoch_recon_loss_list), valid_interval), val_recon_epoch_loss_list, label="validation")
         plt.legend()
         plt.title("Reconstruction loss")
         plt.xlabel("Epoch")
@@ -575,9 +592,6 @@ optimizer_diff = torch.optim.Adam(params=ddpm.parameters(), lr=1e-4)
 # Do data parallel
 # ddpm = torch.nn.DataParallel(ddpm)
 
-start_epoch = 0
-
-load_checkpoint_ddpm(ddpm_checkpoint_path)
 
 ############################################################################################################
 # Training : LDM
@@ -588,6 +602,10 @@ vqvae.eval()
 scaler = GradScaler()
 val_epoch_loss_list = []
 best_valid_loss = float("inf")
+
+start_epoch = 0
+start_epoch, epoch_loss_list, val_epoch_loss_list, best_valid_loss = load_checkpoint_ddpm(ddpm_checkpoint_path, start_epoch, epoch_loss_list, val_epoch_loss_list, best_valid_loss)
+
 
 # first_batch = first(data_loader)
 z = vqvae.encode_stage_2_inputs(first_batch["image"].to(device))
@@ -759,7 +777,7 @@ for epoch in range(start_epoch+1, epochs):
         # Make loss curves plot
         plt.figure(figsize=(10, 5))
         plt.plot(epoch_loss_list, label="train")
-        plt.plot(np.arange(0, len(epoch_loss_list), valid_interval), val_epoch_loss_list, label="validation")
+        plt.plot(np.arange(0, epoch + 1, valid_interval), val_epoch_loss_list, label="validation")
         plt.legend()
         plt.title("Denoising (DDPM) Loss")
         plt.xlabel("Epoch")
