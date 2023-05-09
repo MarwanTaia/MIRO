@@ -2,9 +2,9 @@
 # Imports
 ###################################################################################################
 # Local
-from ldm.utils import *
-from ldm.train_vqgan import train_vqgan
-from ldm.train_ddpm import train_ddpm
+from utils import *
+from train_vqgan import train_vqgan
+from train_ddpm import train_ddpm
 # General
 import os
 import numpy as np
@@ -32,8 +32,6 @@ from generative.inferers import DiffusionInferer, LatentDiffusionInferer
 ###################################################################################################
 # Functions
 ###################################################################################################
-
-
 def plot_example_images(util_image, num_example_images, image_size, figure_dir):
     fig, ax = plt.subplots(6, num_example_images, figsize=(20, num_example_images))
     fig.set_dpi(1000)
@@ -71,7 +69,7 @@ def plot_example_images(util_image, num_example_images, image_size, figure_dir):
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Set GPU device
-device, device_ids = set_device(verbose=True)
+device, device_ids = set_device('cpu', verbose=True)
 
 # Set random seed
 seed = 20301

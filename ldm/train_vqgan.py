@@ -17,6 +17,83 @@ import monai
 from monai.utils import first
 
 
+###################################################################################################
+# Functions
+###################################################################################################
+def reconstruction_comparison_plot(figure_dir, figure_name, images, reconstruction, num_example_images):
+    x_lin = np.linspace(0, images.shape[-1] - 1, num_example_images).astype(int)
+    y_lin = np.linspace(0, images.shape[-2] - 1, num_example_images).astype(int)
+    z_lin = np.linspace(0, images.shape[-3] - 1, num_example_images).astype(int)
+    fig, ax = plt.subplots(4, num_example_images, figsize=(20, 5))
+    for i in range(num_example_images):
+        ax[0, i].imshow(images[0, 0, z_lin[i], :, :].cpu().numpy(), cmap="gray")
+        ax[0, i].axis("off")
+        ax[0, i].set_title(f"Slice {z_lin[i]+1}")
+        ax[1, i].imshow(reconstruction[0, 0, z_lin[i], :, :].cpu().numpy(), cmap="gray")
+        ax[1, i].axis("off")
+        ax[2, i].set_title(f"Slice {z_lin[i]}")
+        ax[2, i].imshow(images[0, 1, z_lin[i], :, :].cpu().numpy())
+        ax[2, i].axis("off")
+        ax[3, i].imshow(reconstruction[0, 1, z_lin[i], :, :].cpu().numpy())
+        ax[3, i].axis("off")
+    plt.savefig(os.path.join(figure_dir, f"{figure_name}.png"))
+
+
+def reconstruction_loss_plot(figure_dir, figure_name, epoch_recon_loss_list, val_recon_epoch_loss_list, valid_interval):
+    plt.figure(figsize=(10, 5))
+    plt.plot(epoch_recon_loss_list, label="train")
+    plt.plot(np.arange(0, len(epoch_recon_loss_list), valid_interval), val_recon_epoch_loss_list, label="validation")
+    plt.legend()
+    plt.title("Reconstruction loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.savefig(os.path.join(figure_dir, f"{figure_name}.pdf"), format="pdf", bbox_inches="tight")
+
+
+def adversarial_loss_plot(figure_dir, figure_name, epoch_gen_loss_list, epoch_disc_loss_list, valid_interval):
+    plt.figure(figsize=(10, 5))
+    plt.plot(epoch_gen_loss_list, label="generator")
+    plt.plot(epoch_disc_loss_list, label="discriminator")
+    plt.legend()
+    plt.title("Generator and discriminator loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.savefig(os.path.join(figure_dir, f"{figure_name}.pdf"), format="pdf", bbox_inches="tight")
+
+
+def latent_representation_plot(figure_dir, figure_name, latent_img, num_example_images):
+    # Checking latent space
+    fig, ax = plt.subplots(3, num_example_images, figsize=(20, num_example_images))
+    # Set dpi 
+    fig.set_dpi(1000)
+    # Set main title
+    fig.suptitle("Example of a Latent Representation of CT scan", fontsize=16)
+    # Get linspace for the z axis
+    x_lin = np.linspace(0, latent_img.shape[-1] - 1, num_example_images).astype(int)
+    y_lin = np.linspace(0, latent_img.shape[-2] - 1, num_example_images).astype(int)
+    z_lin = np.linspace(0, latent_img.shape[-3] - 1, num_example_images).astype(int)
+    # Plot the images
+    for i in range(num_example_images):
+        ax[0, i].imshow(latent_img[0, 0, z_lin[i], :, :].cpu().numpy(), cmap="gray")
+        ax[0, i].set_title(f"Slice : {x_lin[i]}")
+        ax[1, i].imshow(latent_img[0, 0, :, y_lin[i], :].cpu().numpy(), cmap="gray")
+        ax[2, i].imshow(latent_img[0, 0, :, :, x_lin[i]].cpu().numpy(), cmap="gray")
+        # Set row titles
+        ax[0, 0].set_ylabel("Horizontal")
+        ax[1, 0].set_ylabel("Coronal")
+        ax[2, 0].set_ylabel("Sagittal")
+    # Set axis off
+    for i in range(3):
+        for j in range(num_example_images):
+            ax[i, j].set_yticks([])
+            ax[i, j].set_xticks([])
+    # Save figure
+    plt.savefig(os.path.join(figure_dir, f"{figure_name}.pdf"), format="pdf", bbox_inches="tight")
+
+
+###################################################################################################
+# Training
+###################################################################################################
 def train_vqgan(
     train_loader,
     valid_loader,
@@ -124,22 +201,13 @@ def train_vqgan(
                     if val_step == 1:
                         intermediary_images.append(reconstruction[:num_example_images, 0])
                         if plot:
-                            x_lin = np.linspace(0, images.shape[-1] - 1, num_example_images).astype(int)
-                            y_lin = np.linspace(0, images.shape[-2] - 1, num_example_images).astype(int)
-                            z_lin = np.linspace(0, images.shape[-3] - 1, num_example_images).astype(int)
-                            fig, ax = plt.subplots(4, num_example_images, figsize=(20, 5))
-                            for i in range(num_example_images):
-                                ax[0, i].imshow(images[0, 0, z_lin[i], :, :].cpu().numpy(), cmap="gray")
-                                ax[0, i].axis("off")
-                                ax[0, i].set_title(f"Slice {z_lin[i]+1}")
-                                ax[1, i].imshow(reconstruction[0, 0, z_lin[i], :, :].cpu().numpy(), cmap="gray")
-                                ax[1, i].axis("off")
-                                ax[2, i].set_title(f"Slice {z_lin[i]}")
-                                ax[2, i].imshow(images[0, 1, z_lin[i], :, :].cpu().numpy())
-                                ax[2, i].axis("off")
-                                ax[3, i].imshow(reconstruction[0, 1, z_lin[i], :, :].cpu().numpy())
-                                ax[3, i].axis("off")
-                            plt.savefig(os.path.join(figure_dir, f"reconstruction_{epoch}.png"))
+                            reconstruction_comparison_plot(
+                                figure_dir,
+                                f"reconstruction_comparison_{epoch}",
+                                images,
+                                reconstruction,
+                                num_example_images
+                            )
 
 
                     recons_loss = l1_loss(reconstruction.float(), images.float())
@@ -153,24 +221,21 @@ def train_vqgan(
 
             if plot:
                 # Plot losses: reconstruction train and validation
-                plt.figure(figsize=(10, 5))
-                plt.plot(epoch_recon_loss_list, label="train")
-                plt.plot(np.arange(0, len(epoch_recon_loss_list), valid_interval), val_recon_epoch_loss_list, label="validation")
-                plt.legend()
-                plt.title("Reconstruction loss")
-                plt.xlabel("Epoch")
-                plt.ylabel("Loss")
-                plt.savefig(os.path.join(figure_dir, "reconstruction_loss.pdf"), format="pdf", bbox_inches="tight")
-
+                reconstruction_loss_plot(
+                    figure_dir,
+                    f"reconstruction_loss_{epoch}",
+                    epoch_recon_loss_list,
+                    val_recon_epoch_loss_list,
+                    valid_interval
+                )
                 # Plot losses : generator and discriminator
-                plt.figure(figsize=(10, 5))
-                plt.plot(epoch_gen_loss_list, label="generator")
-                plt.plot(epoch_disc_loss_list, label="discriminator")
-                plt.legend()
-                plt.title("Generator and discriminator loss")
-                plt.xlabel("Epoch")
-                plt.ylabel("Loss")
-                plt.savefig(os.path.join(figure_dir, "generator_discriminator_loss.pdf"), format="pdf", bbox_inches="tight")
+                adversarial_loss_plot(
+                    figure_dir,
+                    f"adversarial_loss_{epoch}",
+                    epoch_gen_loss_list,
+                    epoch_disc_loss_list,
+                    valid_interval
+                )
 
             if val_loss < best_valid_loss:
                 best_valid_loss = val_loss
@@ -205,61 +270,21 @@ def train_vqgan(
             latent_img = vqvae.encode_stage_2_inputs(image)
             reconstruction, quantization_loss = vqvae(images=image)
         # Plot example latent space on all three axis
-        # Checking latent space
-        fig, ax = plt.subplots(3, num_example_images, figsize=(20, num_example_images))
-        # Set dpi 
-        fig.set_dpi(1000)
-        # Set main title
-        fig.suptitle("Example of a Latent Representation of CT scan", fontsize=16)
-        # Get linspace for the z axis
-        x_lin = np.linspace(0, latent_img.shape[-1] - 1, num_example_images).astype(int)
-        y_lin = np.linspace(0, latent_img.shape[-2] - 1, num_example_images).astype(int)
-        z_lin = np.linspace(0, latent_img.shape[-3] - 1, num_example_images).astype(int)
-        # Plot the images
-        for i in range(num_example_images):
-            ax[0, i].imshow(latent_img[0, 0, z_lin[i], :, :].cpu().numpy(), cmap="gray")
-            ax[0, i].set_title(f"Slice : {x_lin[i]}")
-            ax[1, i].imshow(latent_img[0, 0, :, y_lin[i], :].cpu().numpy(), cmap="gray")
-            ax[2, i].imshow(latent_img[0, 0, :, :, x_lin[i]].cpu().numpy(), cmap="gray")
-            # Set row titles
-            ax[0, 0].set_ylabel("Horizontal")
-            ax[1, 0].set_ylabel("Coronal")
-            ax[2, 0].set_ylabel("Sagittal")
-        # Set axis off
-        for i in range(3):
-            for j in range(num_example_images):
-                ax[i, j].set_yticks([])
-                ax[i, j].set_xticks([])
-        # Save figure
-        plt.savefig(os.path.join(figure_dir, "latent_space_example.pdf"), format="pdf", bbox_inches="tight")
+        latent_representation_plot(
+            figure_dir,
+            "latent_representation_example",
+            latent_img,
+            num_example_images
+        )
 
-        fig, ax = plt.subplots(4, num_example_images, figsize=(20, 10))
-        # Set dpi 
-        fig.set_dpi(1000)
-        fig.suptitle("Example of VQ-GAN reconstruction", fontsize=16)
-        for i in range(num_example_images):
-            ax[0, i].set_title(f"Slice : {x_lin[i]+1}", fontsize=12)
-            ax[0, i].imshow(image[0, 0, z_lin[i], :, :].cpu().numpy(), cmap="gray")
-            ax[0, i].set_xticks([])
-            ax[0, i].set_yticks([])
-            ax[1, i].imshow(reconstruction[0, 0, z_lin[i], :, :].cpu().numpy())
-            ax[1, i].set_xticks([])
-            ax[1, i].set_yticks([])
-            ax[2, i].imshow(image[0, 1, z_lin[i], :, :].cpu().numpy(), cmap="gray")
-            ax[2, i].set_xticks([])
-            ax[2, i].set_yticks([])
-            ax[3, i].imshow(reconstruction[0, 1, z_lin[i], :, :].cpu().numpy(), cmap="gray")
-            ax[3, i].set_xticks([])
-            ax[3, i].set_yticks([])
-        # Set row titles
-        ax[0, 0].set_ylabel("Input", fontsize=12)
-        ax[2, 0].set_ylabel("Reconstruction", fontsize=12)
-        # Limit space between plots
-        plt.subplots_adjust(wspace=0.2, hspace=-0.6)
-        # Limit space between plots and suptitle
-        fig.subplots_adjust(top=1.2)
-        # Save figure
-        plt.savefig(os.path.join(figure_dir, "reconstruction_example.pdf"), format="pdf", bbox_inches="tight")
+        # Plot example reconstruction
+        reconstruction_comparison_plot(
+            figure_dir,
+            "reconstruction_comparison_example",
+            image,
+            reconstruction,
+            num_example_images
+        )
 
     return (
         epoch_recon_loss_list,
