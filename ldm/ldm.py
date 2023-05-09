@@ -69,7 +69,7 @@ def plot_example_images(util_image, num_example_images, image_size, figure_dir):
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Set GPU device
-device, device_ids = set_device('cpu', verbose=True)
+device, device_ids = set_device(verbose=True)
 
 # Set random seed
 seed = 20301
@@ -78,13 +78,13 @@ np.random.seed(seed)
 
 # Set directories
 ## Data directory
-data_dir = "/home/taia/Téléchargements/"
+data_dir = "/globalscratch/ucl/irec/mtaia/datasets/brain/"
 ## Data CSV file
 data_csv = os.path.join(data_dir, "data_index.csv")
 ## Resources directory
 resource = "Task01_BrainTumour.tar"
 ## Output directory
-output_dir = "/home/taia/junk/remote_test/"
+output_dir = "/globalscratch/ucl/irec/mtaia/monai/ldm_brain/"
 ## Compressed file directory
 compressed_file = os.path.join(data_dir, resource)
 ## Checkpoint directory
@@ -104,11 +104,11 @@ os.makedirs(figure_dir, exist_ok=True)
 
 # Set parameters
 ## Number of epochs
-epochs = 2 # 250
+epochs = 1000 # 250 # 1000
 ## Validation interval
-valid_interval = 1 # 20
+valid_interval = 50 # 20 # 50
 ## Batch size
-batch_size = 1
+batch_size = 10
 ## Number of workers
 num_workers = 0
 ## Learning rate
@@ -122,9 +122,11 @@ voxel_size = (2, 2, 2)
 ## Number of example images
 num_example_images = 7
 ## Latent channels
-latent_channels = 8 # 256 # Try 512/64 32/512
+latent_channels = 1024*8 # 256 # Try 512/64 32/512
+## DDPM channels
+ddpm_channels = 8
 ## Codebook size
-num_embeddings = 1024*4 # 128
+num_embeddings = 1024*8 # 128
 ## MRI channel
 mri_channel = 0 # 0: FLAIR
 ## Label channel
@@ -191,8 +193,8 @@ def main():
         upsample_parameters=(  (2, 4, 1, 1, 0), (2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
 
         num_res_layers=3,
-        num_channels=[latent_channels, latent_channels, latent_channels],
-        num_res_channels=[latent_channels, latent_channels, latent_channels],
+        num_channels=[2, 2, 2],
+        num_res_channels=[2, 2, 2],
 
         num_embeddings=num_embeddings,
         embedding_dim=latent_channels,
@@ -289,8 +291,8 @@ def main():
         in_channels=latent_channels,
         out_channels=latent_channels,
 
-        num_res_blocks=[latent_channels],
-        num_channels=[latent_channels],
+        num_res_blocks=[2],
+        num_channels=[ddpm_channels],
         resblock_updown=True,
 
         attention_levels=[False],
@@ -340,7 +342,7 @@ def main():
 
 
     # first_batch = first(data_loader)
-    z = vqvae.encode_stage_2_inputs(util_image)
+    z = vqvae.encode_stage_2_inputs(util_image.to(device))
 
     train_ddpm(
         train_loader=train_loader,
