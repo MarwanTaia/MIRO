@@ -17,6 +17,58 @@ import torch.nn.functional as F
 from torch.cuda.amp import autocast
 
 
+###################################################################################################
+# Functions
+###################################################################################################
+def ldm_sampling_plot(figure_dir, figure_name, images, noise, latent_image, denoised_image, out_image, num_example_images):
+    # Checking denoising
+    x_lin = np.linspace(0, noise.shape[-1] - 1, num_example_images).astype(int)
+    y_lin = np.linspace(0, noise.shape[-2] - 1, num_example_images).astype(int)
+    z_lin_pixel = np.linspace(0, images.shape[-3] - 1, num_example_images).astype(int)
+    z_lin_latent = np.linspace(0, noise.shape[-3] - 1, num_example_images).astype(int)
+
+    fig, ax = plt.subplots(6, num_example_images, figsize=(20, 10))
+    # Set dpi 
+    fig.set_dpi(1000)
+    fig.suptitle("Example of LDM Process Steps", fontsize=16)
+    for i in range(num_example_images):
+        ax[0, i].imshow(images[0, 0, z_lin_pixel[i], :, :].cpu().numpy(), cmap="gray")
+        ax[0, i].set_title(f"Slice : {z_lin_pixel[i]+1}", fontsize=12)
+        ax[1, i].imshow(latent_image[0, 0, z_lin_latent[i], :, :].cpu().numpy(), cmap="gray")
+        ax[1, i].set_title(f"Slice : {z_lin_latent[i]+1}", fontsize=12)
+        ax[2, i].imshow(noise[0, 0, z_lin_latent[i], :, :].cpu().numpy(), cmap="gray")
+        ax[3, i].imshow(denoised_image[0, 0, z_lin_latent[i], :, :].cpu().numpy(), cmap="gray")
+        ax[4, i].imshow(out_image[0, 0, z_lin_pixel[i], :, :].cpu().numpy(), cmap="gray")
+        ax[4, i].set_title(f"Slice : {z_lin_pixel[i]+1}", fontsize=12)
+        ax[5, i].imshow(out_image[0, 1, z_lin_pixel[i], :, :].cpu().numpy())
+        for j in range(6):
+            ax[j, i].set_xticks([])
+            ax[j, i].set_yticks([])
+    # Set row titles
+    ax[0, 0].set_ylabel("Original Image \n (Pixel Space)", fontsize=12)
+    ax[1, 0].set_ylabel("Latent \n Representation\n (Latent Space)", fontsize=12)
+    ax[2, 0].set_ylabel("Noise \n (Latent Space)", fontsize=12)
+    ax[3, 0].set_ylabel("Denoised Image \n (Latent Space)", fontsize=12)
+    ax[4, 0].set_ylabel("Output Image \n (Pixel Space)", fontsize=12)
+    ax[5, 0].set_ylabel("Output Mask \n (Pixel Space)", fontsize=12)
+    # Limit space between plots
+    fig.subplots_adjust(wspace=-0.7, hspace=0.23, top=0.9)
+    # Save figure
+    plt.savefig(os.path.join(figure_dir, f"{figure_name}.pdf"), format="pdf", bbox_inches="tight")
+
+def ddpm_loss_plot(figure_dir, figure_name, epoch_loss_list, val_epoch_loss_list, valid_interval, epoch):
+    plt.figure(figsize=(10, 5))
+    plt.plot(epoch_loss_list, label="train")
+    plt.plot(np.arange(0, epoch + 1, valid_interval), val_epoch_loss_list, label="validation")
+    plt.legend()
+    plt.title("Denoising (DDPM) Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.savefig(os.path.join(figure_dir, f"{figure_name}.pdf"), format="pdf", bbox_inches="tight")
+
+###################################################################################################
+# Training
+###################################################################################################
 def train_ddpm(
     train_loader,
     valid_loader,
@@ -39,6 +91,7 @@ def train_ddpm(
     epoch_loss_list = []
     val_epoch_loss_list = []
     best_valid_loss = float("inf")
+    total_start_time = time.time()
 
     for epoch in range(start_epoch + 1, epochs):
         ddpm.train()
@@ -121,49 +174,17 @@ def train_ddpm(
                             out_image = vqvae.decode_stage_2_outputs(denoised_image)
 
                             # Checking denoising
-                            x_lin = np.linspace(0, noise.shape[-1] - 1, num_example_images).astype(int)
-                            y_lin = np.linspace(0, noise.shape[-2] - 1, num_example_images).astype(int)
-                            z_lin_pixel = np.linspace(0, images.shape[-3] - 1, num_example_images).astype(int)
-                            z_lin_latent = np.linspace(0, noise.shape[-3] - 1, num_example_images).astype(int)
-
-                            fig, ax = plt.subplots(6, num_example_images, figsize=(20, 10))
-                            # Set dpi 
-                            fig.set_dpi(1000)
-                            fig.suptitle("Example of LDM Process Steps", fontsize=16)
-                            for i in range(num_example_images):
-                                ax[0, i].imshow(images[0, 0, z_lin_pixel[i], :, :].cpu().numpy(), cmap="gray")
-                                ax[0, i].set_xticks([])
-                                ax[0, i].set_yticks([])
-                                ax[0, i].set_title(f"Slice : {z_lin_pixel[i]+1}", fontsize=12)
-                                ax[1, i].imshow(latent_img[0, 0, z_lin_latent[i], :, :].cpu().numpy(), cmap="gray")
-                                ax[1, i].set_xticks([])
-                                ax[1, i].set_yticks([])
-                                ax[1, i].set_title(f"Slice : {z_lin_latent[i]+1}", fontsize=12)
-                                ax[2, i].imshow(noise[0, 0, z_lin_latent[i], :, :].cpu().numpy(), cmap="gray")
-                                ax[2, i].set_xticks([])
-                                ax[2, i].set_yticks([])
-                                ax[3, i].imshow(denoised_image[0, 0, z_lin_latent[i], :, :].cpu().numpy(), cmap="gray")
-                                ax[3, i].set_xticks([])
-                                ax[3, i].set_yticks([])
-                                ax[4, i].imshow(out_image[0, 0, z_lin_pixel[i], :, :].cpu().numpy(), cmap="gray")
-                                ax[4, i].set_xticks([])
-                                ax[4, i].set_yticks([])
-                                ax[4, i].set_title(f"Slice : {z_lin_pixel[i]+1}", fontsize=12)
-                                ax[5, i].imshow(out_image[0, 1, z_lin_pixel[i], :, :].cpu().numpy())
-                                ax[5, i].set_xticks([])
-                                ax[5, i].set_yticks([])
-                            # Set row titles
-                            ax[0, 0].set_ylabel("Original Image \n (Pixel Space)", fontsize=12)
-                            ax[1, 0].set_ylabel("Latent \n Representation\n (Latent Space)", fontsize=12)
-                            ax[2, 0].set_ylabel("Noise \n (Latent Space)", fontsize=12)
-                            ax[3, 0].set_ylabel("Denoised Image \n (Latent Space)", fontsize=12)
-                            ax[4, 0].set_ylabel("Output Image \n (Pixel Space)", fontsize=12)
-                            ax[5, 0].set_ylabel("Output Mask \n (Pixel Space)", fontsize=12)
-                            # Limit space between plots
-                            fig.subplots_adjust(wspace=-0.7, hspace=0.23, top=0.9)
-                            # Save figure
-                            plt.savefig(os.path.join(figure_dir, f"LDM_process_example_{epoch}.pdf"), format="pdf", bbox_inches="tight")
-
+                            if plot:
+                                ldm_sampling_plot(
+                                    figure_dir=figure_dir,
+                                    figure_name=f"ldm_sampling_{epoch}",
+                                    images=images,
+                                    noise=noise,
+                                    latent_image=latent_img,
+                                    denoised_image=denoised_image,
+                                    out_image=out_image,
+                                    num_example_images=num_example_images,
+                                )
 
                 val_epoch_loss = val_loss / (step + 1)
                 val_epoch_loss_list.append(val_epoch_loss)
@@ -187,13 +208,16 @@ def train_ddpm(
 
             if plot:
                 # Make loss curves plot
-                plt.figure(figsize=(10, 5))
-                plt.plot(epoch_loss_list, label="train")
-                plt.plot(np.arange(0, epoch + 1, valid_interval), val_epoch_loss_list, label="validation")
-                plt.legend()
-                plt.title("Denoising (DDPM) Loss")
-                plt.xlabel("Epoch")
-                plt.ylabel("Loss")
-                plt.savefig(os.path.join(figure_dir, "loss_curves_ddpm.pdf"), format="pdf", bbox_inches="tight")
+                ddpm_loss_plot(
+                    figure_dir=figure_dir,
+                    figure_name=f"ddpm_loss",
+                    epoch_loss_list=epoch_loss_list,
+                    val_epoch_loss_list=val_epoch_loss_list,
+                    valid_interval=valid_interval,
+                    epoch=epoch,
+                )
+
+    total_time = time.time() - total_start_time
+    print(f"Training completed in {total_time // 3600} hours, {(total_time % 3600) // 60} minutes and {total_time % 60} seconds")
 
     return epoch_loss_list, val_epoch_loss_list, best_valid_loss
