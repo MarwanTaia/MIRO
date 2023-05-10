@@ -136,7 +136,7 @@ def create_dataset(data_dir, section, transforms, num_workers=0, seed=0):
         download=False,
         seed=seed,
         transform=transforms,
-        val_frac=0.99 if section == "training" else 0.01,
+        val_frac=0.95 if section == "training" else 0.05,
     )
 
 

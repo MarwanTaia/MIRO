@@ -71,6 +71,9 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 # Set GPU device
 device, device_ids = set_device(verbose=True)
 
+# Print GPU memory
+# get_gpu_mem(message="GPU memory usage before loading data:", device_ids=device_ids)
+
 # Set random seed
 seed = 20301
 torch.manual_seed(seed)
@@ -78,13 +81,13 @@ np.random.seed(seed)
 
 # Set directories
 ## Data directory
-data_dir = "/globalscratch/ucl/irec/mtaia/datasets/brain/"
+data_dir = "/home/taia/Téléchargements/"
 ## Data CSV file
 data_csv = os.path.join(data_dir, "data_index.csv")
 ## Resources directory
 resource = "Task01_BrainTumour.tar"
 ## Output directory
-output_dir = "/globalscratch/ucl/irec/mtaia/monai/ldm_brain/"
+output_dir = "/home/taia/junk/remote_test/"
 ## Compressed file directory
 compressed_file = os.path.join(data_dir, resource)
 ## Checkpoint directory
@@ -106,13 +109,13 @@ os.makedirs(figure_dir, exist_ok=True)
 ## Number of epochs
 epochs = 1000 # 250 # 1000
 ## Validation interval
-valid_interval = 50 # 20 # 50
+valid_interval = 5 # 20 # 50
 ## Batch size
-batch_size = 10
+batch_size = 1
 ## Number of workers
-num_workers = 0
+num_workers = 16
 ## Learning rate
-lr = 1e-4
+lr = 1e-3
 ## Number of diffusion steps
 num_diffusion_steps = 1000
 ## Image size
@@ -122,11 +125,13 @@ voxel_size = (2, 2, 2)
 ## Number of example images
 num_example_images = 7
 ## Latent channels
-latent_channels = 1024*8 # 256 # Try 512/64 32/512
+latent_channels = 8 # 256 # Try 512/64 32/512
 ## DDPM channels
 ddpm_channels = 8
+## Embedding dimension
+embedding_dim = 8
 ## Codebook size
-num_embeddings = 1024*8 # 128
+num_embeddings = 1024*8*4 # 128
 ## MRI channel
 mri_channel = 0 # 0: FLAIR
 ## Label channel
@@ -145,7 +150,7 @@ def main():
     loading_transforms = create_transforms(image_size)
 
     # Create training dataset and loader
-    train_dataset = create_dataset(data_dir, "training", loading_transforms, seed=seed)
+    train_dataset = create_dataset(data_dir, "training", loading_transforms, seed=0)
     train_img_list, train_label_list = create_img_label_list(
         train_dataset, mri_channel, label_channel
     )
@@ -158,7 +163,7 @@ def main():
     )
 
     # Create validation dataset and loader
-    valid_dataset = create_dataset(data_dir, "validation", loading_transforms, seed=seed)
+    valid_dataset = create_dataset(data_dir, "validation", loading_transforms, seed=0)
     valid_img_list, valid_label_list = create_img_label_list(
         valid_dataset, mri_channel, label_channel
     )
@@ -193,11 +198,11 @@ def main():
         upsample_parameters=(  (2, 4, 1, 1, 0), (2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
 
         num_res_layers=3,
-        num_channels=[2, 2, 2],
-        num_res_channels=[2, 2, 2],
+        num_channels=[latent_channels, latent_channels, latent_channels],
+        num_res_channels=[latent_channels, latent_channels, latent_channels],
 
         num_embeddings=num_embeddings,
-        embedding_dim=latent_channels,
+        embedding_dim=embedding_dim,
     ).to(device)
 
     # Instantiate the discriminator
@@ -225,8 +230,8 @@ def main():
     perceptual_weight = 0.001
 
     # Define optimizers
-    optimizer_g = torch.optim.Adam(vqvae.parameters(), lr=1e-4)
-    optimizer_d = torch.optim.Adam(discriminator.parameters(), lr=1e-4)
+    optimizer_g = torch.optim.Adam(vqvae.parameters(), lr=lr)
+    optimizer_d = torch.optim.Adam(discriminator.parameters(), lr=lr)
 
     #################################################
     # Reload model
@@ -241,16 +246,16 @@ def main():
     best_valid_loss = np.inf
 
     # Load model
-    start_epoch, epoch_recon_loss_list, epoch_gen_loss_list, epoch_disc_loss_list, \
-        val_recon_epoch_loss_list, intermediary_images, \
-        best_valid_loss = load_checkpoint_vqvae(
-        vqgan_checkpoint_path,
-        vqvae,
-        discriminator,
-        perceptual_loss,
-        optimizer_g,
-        optimizer_d
-        )
+    # start_epoch, epoch_recon_loss_list, epoch_gen_loss_list, epoch_disc_loss_list, \
+    #     val_recon_epoch_loss_list, intermediary_images, \
+    #     best_valid_loss = load_checkpoint_vqvae(
+    #     vqgan_checkpoint_path,
+    #     vqvae,
+    #     discriminator,
+    #     perceptual_loss,
+    #     optimizer_g,
+    #     optimizer_d
+    #     )
 
     ###################################################################################################
     # Training : VQ-GAN
@@ -261,6 +266,7 @@ def main():
         valid_loader=valid_loader,
         vqvae=vqvae,
         discriminator=discriminator,
+        reconstructions_loss=l1_loss,
         perceptual_loss=perceptual_loss,
         adv_loss=adv_loss,
         perceptual_weight=perceptual_weight,
@@ -288,8 +294,8 @@ def main():
     # Diffusion Model
     ddpm = DiffusionModelUNet(
         spatial_dims=3,
-        in_channels=latent_channels,
-        out_channels=latent_channels,
+        in_channels=embedding_dim,
+        out_channels=embedding_dim,
 
         num_res_blocks=[2],
         num_channels=[ddpm_channels],
@@ -324,7 +330,7 @@ def main():
     ddpm_inferer = DiffusionInferer(scheduler=scheduler)
 
     # Optimizer
-    optimizer_diff = torch.optim.Adam(params=ddpm.parameters(), lr=1e-4)
+    optimizer_diff = torch.optim.Adam(params=ddpm.parameters(), lr=lr)
 
     ###############################################################################################
     # Training : LDM

@@ -2,7 +2,7 @@
 # Imports
 ###################################################################################################
 # Local
-
+from utils import *
 # General
 import os
 import numpy as np
@@ -120,6 +120,7 @@ def train_ddpm(
                 )
 
                 loss = F.mse_loss(noise_pred.float(), noise.float())
+            get_gpu_mem()
 
             scaler.scale(loss).backward()
             scaler.step(optimizer_diff)

@@ -1,6 +1,8 @@
 ###################################################################################################
 # Imports
 ###################################################################################################
+# Local
+from utils import *
 # General
 import os
 import numpy as np
@@ -99,6 +101,7 @@ def train_vqgan(
     valid_loader,
     vqvae,
     discriminator,
+    reconstructions_loss,
     perceptual_loss,
     adv_loss,
     perceptual_weight,
@@ -122,7 +125,7 @@ def train_vqgan(
     val_recon_epoch_loss_list = []
     intermediary_images = []
     best_valid_loss = float("inf")
-    l1_loss = torch.nn.L1Loss()
+    l1_loss = reconstructions_loss
 
     for epoch in range(start_epoch, epochs):
         vqvae.train()
@@ -142,7 +145,7 @@ def train_vqgan(
                 continue
 
             optimizer_g.zero_grad(set_to_none=True)
-            encoded = vqvae.encode_stage_2_inputs(images)
+            # encoded = vqvae.encode_stage_2_inputs(images)
             reconstruction, quantization_loss = vqvae(images)
             logits_fake = discriminator(reconstruction.contiguous().float())[-1]
             recons_loss = l1_loss(reconstruction.float(), images.float())
@@ -177,6 +180,8 @@ def train_vqgan(
                     "disc_loss": disc_epoch_loss / (step + 1),
                 }
             )
+
+            get_gpu_mem()
 
             del images, batch, reconstruction
             torch.cuda.empty_cache()
@@ -223,7 +228,7 @@ def train_vqgan(
                 # Plot losses: reconstruction train and validation
                 reconstruction_loss_plot(
                     figure_dir,
-                    f"reconstruction_loss_{epoch}",
+                    f"reconstruction_loss",
                     epoch_recon_loss_list,
                     val_recon_epoch_loss_list,
                     valid_interval
@@ -231,7 +236,7 @@ def train_vqgan(
                 # Plot losses : generator and discriminator
                 adversarial_loss_plot(
                     figure_dir,
-                    f"adversarial_loss_{epoch}",
+                    f"adversarial_loss",
                     epoch_gen_loss_list,
                     epoch_disc_loss_list,
                     valid_interval
