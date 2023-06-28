@@ -125,7 +125,7 @@ voxel_size = (2, 2, 2)
 ## Number of example images
 num_example_images = 7
 ## Latent channels
-latent_channels = 8 # 256 # Try 512/64 32/512
+latent_channels = 3 # 256 # Try 512/64 32/512
 ## DDPM channels
 ddpm_channels = 8
 ## Embedding dimension
